@@ -109,6 +109,13 @@ set "HF_HUB_ENABLE_HF_TRANSFER=0"
 set "USE_LIBUV=0"
 set "TORCH_TCPSTORE_USE_LIBUV=0"
 
+:: sam3d_objects/__init__.py imports an internal-only `sam3d_objects.init`
+:: submodule not in the public Meta repo. The upstream escape hatch is
+:: LIDRA_SKIP_INIT=1 (skips init for "lightweight tools"). Without this set,
+:: every `import sam3d_objects` -- including via simulation.image23D paths --
+:: raises ModuleNotFoundError.
+set "LIDRA_SKIP_INIT=1"
+
 set "SIM_OUT_BASE=!REALWONDER_RESULT!\%CASE%"
 set "SIM_OUT=!SIM_OUT_BASE!\final_sim"
 set "INFER_OUT=!SIM_OUT!\final.mp4"

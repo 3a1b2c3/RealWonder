@@ -87,6 +87,11 @@ if errorlevel 1 ( echo FAIL sam2 install & exit /b 1 )
 :verify
 echo.
 echo --- verify imports ---
+:: sam3d_objects/__init__.py imports a private `sam3d_objects.init` submodule
+:: that isn't in the public Meta repo. The upstream code provides
+:: LIDRA_SKIP_INIT=1 as the documented escape hatch — set it here and in
+:: run_examples.bat so case_simulation.py can also import the public surface.
+set "LIDRA_SKIP_INIT=1"
 "!VENV_PY!" -c "import sam3d_objects; print('sam3d_objects:', getattr(sam3d_objects, '__version__', '?'))"
 if errorlevel 1 ( echo FAIL sam3d_objects import & exit /b 1 )
 "!VENV_PY!" -c "import sam2; print('sam2:', getattr(sam2, '__version__', '?'))"
