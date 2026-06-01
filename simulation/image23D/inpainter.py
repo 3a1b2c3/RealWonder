@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.abspath("submodules/flux_controlnet_inpainting"))
+
 import torch
 from diffusers.utils import load_image, check_min_version
 from submodules.flux_controlnet_inpainting.controlnet_flux import FluxControlNetModel
@@ -9,9 +13,6 @@ from PIL import Image
 from torchvision.transforms import ToTensor
 import cv2
 from simulation.utils import dilate_binary_mask, smooth_segmentation_mask_255
-import sys
-import os
-sys.path.append(os.path.abspath("submodules/flux_controlnet_inpainting"))
 
 check_min_version("0.30.2")
 

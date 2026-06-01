@@ -13,6 +13,14 @@ import sam2
 from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2ImagePredictor
 
+_DEBUG_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "debug")
+
+
+def _debug_path(*parts):
+    path = os.path.join(_DEBUG_ROOT, *parts)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return path
+
 def show_mask(mask, ax, random_color=False, borders = True):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
@@ -54,7 +62,7 @@ def show_masks(image, masks, scores, save_prefix, point_coords=None, box_coords=
         if len(scores) > 1:
             plt.title(f"Mask {i+1}, Score: {score:.3f}", fontsize=18)
         plt.axis('off')
-        plt.savefig(f"debug/sam2/{save_prefix}_masks_{i:02d}.png")
+        plt.savefig(_debug_path("sam2", f"{save_prefix}_masks_{i:02d}.png"))
 
 
 class OneFormerSegmenter:
@@ -165,8 +173,8 @@ class RepViTSegmenter:
             sam_masks_np.append(sam_mask['segmentation'])   # (512, 512) bool numpy array
             sam_mask = sam_mask['segmentation'] * 255
             sam_mask = sam_mask.astype(np.uint8)
-            cv2.imwrite(f"debug/sam/sam_mask_{sid:02d}.png", sam_mask)
-            cv2.imwrite(f"debug/sam/sam_mask_{sid:02d}_rgb.png", (sam_mask[:,:,None]/255).astype(np.uint8) * image_np[:,:,[2,1,0]])
+            cv2.imwrite(_debug_path("sam", f"sam_mask_{sid:02d}.png"), sam_mask)
+            cv2.imwrite(_debug_path("sam", f"sam_mask_{sid:02d}_rgb.png"), (sam_mask[:,:,None]/255).astype(np.uint8) * image_np[:,:,[2,1,0]])
         
         # # Dilate the mask(s) using cv2.dilate
         # kernel = np.ones((5, 5), np.uint8)  # You can adjust the kernel size as needed
@@ -220,7 +228,9 @@ class RepViTSegmenter:
 class SegmentAnythingSegmenter:
     def __init__(self, config, device="cuda"):
         self.device = device
-        self.sam2_checkpoint = "/svl/u/wliu283/projects/wonder_play/i2v/flex-forcing/submodules/sam2/checkpoints/sam2.1_hiera_large.pt"
+        import os
+        _repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.sam2_checkpoint = os.path.join(_repo_root, "submodules", "sam2", "checkpoints", "sam2.1_hiera_large.pt")
         self.model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
         self.config = config
 
@@ -244,7 +254,7 @@ class SegmentAnythingSegmenter:
             plt.imshow(image)
             show_points(object_points_xy, object_point_labels, plt.gca())
             plt.axis('on')
-            plt.savefig(f"debug/sam2/input_points_{object_idx:02d}.png")
+            plt.savefig(_debug_path("sam2", f"input_points_{object_idx:02d}.png"))
         
             masks, scores, logits = predictor.predict(
                 point_coords=object_points_xy,

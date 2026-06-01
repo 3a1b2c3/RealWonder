@@ -75,14 +75,65 @@ if "%SKIP_CLONE%"=="0" (
 
 :: --- 2. editable installs (--no-deps; venv already has the right stack) ---
 echo.
-echo --- 2/3 sam_3d_objects (editable, --no-deps) ---
+echo --- 2/3 sam_3d_objects (editable, --no-deps) + runtime deps ---
 "!UV!" pip install --python "!VENV_PY!" --no-deps -e "submodules\sam_3d_objects"
 if errorlevel 1 ( echo FAIL sam_3d_objects install & exit /b 1 )
+
+:: Runtime deps that sam_3d_objects imports but we skip via --no-deps (the
+:: package's requirements.txt pins cu121-torch / Linux-only flash_attn /
+:: xformers which would clobber our cu128 stack).
+::
+:: utils3d is pinned to commit d790d33 (the last commit before EasternJournalist
+:: renamed the API in 2025-08: depth_edge -> depth_map_edge, normals_edge ->
+:: normal_map_edge, points_to_normals -> point_map_to_normal_map, image_uv /
+:: image_mesh moved). sam_3d_objects's code still calls the old names.
+:: spconv-cu126 is the closest published cu12x build; ABI-compatible with cu128.
+"!UV!" pip install --python "!VENV_PY!" --no-deps --force-reinstall "git+https://github.com/EasternJournalist/utils3d.git@d790d33"
+if errorlevel 1 ( echo FAIL utils3d pin & exit /b 1 )
+:: open3d/optree/astor/easydict/gsplat -- direct deps surfaced by walking
+:: sam3d_objects.pipeline + utils.visualization imports.
+:: spconv-cu126 -- closest published cu12x build (plain "spconv" has no Win wheel).
+:: xatlas/pyvista/pymeshfix/igraph -- tdfy_dit.utils.postprocessing_utils chain.
+"!UV!" pip install --python "!VENV_PY!" open3d optree astor easydict spconv-cu126 gsplat xatlas pyvista pymeshfix igraph
+if errorlevel 1 ( echo FAIL sam_3d_objects runtime deps & exit /b 1 )
 
 echo.
 echo --- 3/3 sam2 (editable, --no-deps) ---
 "!UV!" pip install --python "!VENV_PY!" --no-deps -e "submodules\sam2"
 if errorlevel 1 ( echo FAIL sam2 install & exit /b 1 )
+
+:: --- rp.git.CommonSource: rp's `git_import` tries to clone this on first use,
+::     but the auto-clone fails on Windows (path/quoting). Pre-clone manually.
+:: --- gstaichi vs quadrants: genesis-world 1.0 renamed taichi -> quadrants.
+::     RealWonder's case_simulation/*.py was patched in-tree to use quadrants.
+::     We explicitly UNINSTALL gstaichi here in case it got pulled in earlier;
+::     leaving it installed causes a pybind11 "Layout already registered"
+::     collision the moment both libs load.
+echo.
+echo --- 3b. rp.git.CommonSource (manual clone -- auto path broken on Windows) ---
+set "_RP_GIT=!REALWONDER_VENV!\Lib\site-packages\rp\git"
+if not exist "!_RP_GIT!\CommonSource" (
+    if not exist "!_RP_GIT!" mkdir "!_RP_GIT!"
+    git clone https://github.com/RyannDaGreat/CommonSource "!_RP_GIT!\CommonSource"
+    if errorlevel 1 ( echo FAIL CommonSource clone & exit /b 1 )
+) else (
+    echo CommonSource already present at !_RP_GIT!\CommonSource
+)
+
+echo.
+echo --- 3c. uninstall gstaichi (collides with quadrants on Layout) ---
+"!UV!" pip uninstall --python "!VENV_PY!" gstaichi 2>nul
+
+echo.
+echo --- 3d. SAM2.1 hiera-large checkpoint (~898 MB) ---
+set "_SAM2_CKPT=%~dp0submodules\sam2\checkpoints\sam2.1_hiera_large.pt"
+if not exist "!_SAM2_CKPT!" (
+    echo Downloading sam2.1_hiera_large.pt...
+    curl -L -o "!_SAM2_CKPT!" "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"
+    if errorlevel 1 ( echo FAIL sam2 checkpoint download & exit /b 1 )
+) else (
+    echo SAM2 checkpoint already present at !_SAM2_CKPT!
+)
 
 :verify
 echo.
@@ -98,6 +149,17 @@ if errorlevel 1 ( echo FAIL sam3d_objects import & exit /b 1 )
 if errorlevel 1 ( echo FAIL sam2 import & exit /b 1 )
 "!VENV_PY!" -c "import genesis; print('genesis:', genesis.__version__)"
 if errorlevel 1 ( echo WARN: genesis not importable ^(Phase 1 will fail^) )
+"!VENV_PY!" -c "import rp.git.CommonSource; print('rp.git.CommonSource: OK')"
+if errorlevel 1 ( echo WARN: rp.git.CommonSource not importable )
+:: Use forward slashes -- a trailing backslash from %~dp0 escapes the closing
+:: quote (r'C:\...\' is an unterminated string literal because Python's r''
+:: still treats \' as an escape sequence for quote parsing).
+set "_REALWONDER_DIR=%~dp0"
+set "_REALWONDER_DIR=!_REALWONDER_DIR:\=/!"
+pushd "%~dp0" >nul
+"!VENV_PY!" -c "import sys, os; sys.path.insert(0, os.getcwd()); os.environ.setdefault('LIDRA_SKIP_INIT', '1'); from simulation.genesis_simulator import DiffSim; print('DiffSim: OK')"
+if errorlevel 1 ( echo WARN: DiffSim end-to-end import failed )
+popd >nul
 
 echo.
 echo --- done ---

@@ -1,7 +1,7 @@
 from simulation.case_simulation.case_handler import CaseHandler, register_case
 import numpy as np
 import torch
-import gstaichi as ti
+import quadrants as ti  # genesis-world>=1.0 renamed gstaichi -> quadrants
 import genesis as gs
 
 @register_case("persimmon")

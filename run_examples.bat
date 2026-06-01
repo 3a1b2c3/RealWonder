@@ -116,6 +116,11 @@ set "TORCH_TCPSTORE_USE_LIBUV=0"
 :: raises ModuleNotFoundError.
 set "LIDRA_SKIP_INIT=1"
 
+:: segmenter.py writes debug PNGs to debug/sam2/ and debug/sam_dilated/ without
+:: ensuring the dirs exist (plt.savefig hits FileNotFoundError). Pre-create.
+if not exist "%~dp0debug\sam2"          mkdir "%~dp0debug\sam2"
+if not exist "%~dp0debug\sam_dilated"   mkdir "%~dp0debug\sam_dilated"
+
 set "SIM_OUT_BASE=!REALWONDER_RESULT!\%CASE%"
 set "SIM_OUT=!SIM_OUT_BASE!\final_sim"
 set "INFER_OUT=!SIM_OUT!\final.mp4"

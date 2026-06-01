@@ -6,7 +6,7 @@ Abstract base class for all simulation case handlers.
 from abc import ABC, abstractmethod
 import numpy as np
 import torch
-import gstaichi as ti
+import quadrants as ti  # genesis-world>=1.0 renamed gstaichi -> quadrants
 import genesis as gs
 import sys
 
