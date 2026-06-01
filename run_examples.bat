@@ -49,7 +49,26 @@ exit /b 2
 :args_done
 
 :: --- paths ---
-if not defined REALWONDER_VENV    set "REALWONDER_VENV=%~dp0.venv"
+:: Auto-fallback: validate the chosen venv has torch; if not, fall back to
+:: Helios's venv which has cp311 + torch 2.10+cu128 + Genesis + RealWonder deps
+:: already installed. This check runs even when REALWONDER_VENV is explicitly
+:: set, because a stale `set REALWONDER_VENV=...\RealWonder\.venv` from a prior
+:: session would otherwise pin the runtime to a torchless venv and every dep
+:: would re-surface (kornia, pytorch3d, ...) despite being installed in Helios.
+:: To genuinely opt out of the fallback, set REALWONDER_VENV_FORCE=1 alongside.
+if not defined REALWONDER_VENV set "REALWONDER_VENV=%~dp0.venv"
+set "_TORCH_OK=0"
+if exist "!REALWONDER_VENV!\Scripts\python.exe" (
+    "!REALWONDER_VENV!\Scripts\python.exe" -c "import torch" 2>nul
+    if not errorlevel 1 set "_TORCH_OK=1"
+)
+if "!_TORCH_OK!"=="0" if not defined REALWONDER_VENV_FORCE (
+    if exist "C:\workspace\world\Helios\.venv\Scripts\python.exe" (
+        echo --- auto-fallback: '!REALWONDER_VENV!' has no torch; routing to Helios/.venv ---
+        echo --- ^(set REALWONDER_VENV_FORCE=1 to disable this fallback^) ---
+        set "REALWONDER_VENV=C:\workspace\world\Helios\.venv"
+    )
+)
 set "VENV_PY=!REALWONDER_VENV!\Scripts\python.exe"
 if not defined REALWONDER_RESULT  set "REALWONDER_RESULT=%~dp0result"
 if not defined REALWONDER_CKPT (

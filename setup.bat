@@ -127,35 +127,73 @@ echo --- triton-windows ^(replaces Linux triton; satisfies `import triton` for s
 if errorlevel 1 ( echo WARN: triton-windows install failed -- torch.compile may not work )
 
 :: requirements.txt has open_clip_torch which pulls torch as a transitive dep.
-:: --upgrade-strategy only-if-needed keeps our cu128 torch from being downgraded
-:: to the default CPU wheel from PyPI.
+:: uv's default behavior IS only-if-needed (unlike pip's eager default), so we
+:: don't need a flag — pip's `--upgrade-strategy only-if-needed` is a PIP flag,
+:: NOT a uv flag (uv only has the boolean `--upgrade`). Passing it makes uv
+:: error out with "unexpected argument". The cu128 torch we just installed
+:: will be left in place because version `2.10.0` already satisfies any
+:: transitive `torch` requirement.
 echo --- RealWonder/requirements.txt ^(small: diffusers, kornia, ffmpeg-python, RepViT^) ---
-"!UV_EXE!" pip install --python "!VENV_PY!" --upgrade-strategy only-if-needed -r "%~dp0requirements.txt"
+"!UV_EXE!" pip install --python "!VENV_PY!" -r "%~dp0requirements.txt"
 if errorlevel 1 ( echo ERROR: requirements install failed & exit /b 1 )
+
+:: case_simulation.py + infer_sim.py need a few deps that aren't in the root
+:: requirements.txt — they live in demo_web/requirements.txt which is heavier
+:: and has Linux-pinned torch / pytorch3d / flash_attn that we don't want.
+:: Cherry-pick the ones case_simulation.py actually imports.
+echo --- case_simulation deps ^(omegaconf, safetensors, transformers, trimesh, peft, PyYAML^) ---
+"!UV_EXE!" pip install --python "!VENV_PY!" omegaconf safetensors transformers trimesh peft PyYAML
+if errorlevel 1 ( echo WARN: case_simulation deps install had errors -- phase 1 may break )
 
 :: Genesis (physics sim) — needed by case_simulation.py and demo_web/app.py.
 :: genesis-world has a Windows-installable pure-Python wheel; the gstaichi C++
 :: backend may or may not work at runtime — gs.init(backend=cuda) is the real
 :: test. Skipped on Linux because the conda env already pins a specific build.
+:: This pulls a heavy dep tree (vtk, scikit-image, tetgen, libigl, ...) so it
+:: takes a couple of minutes even after torch is in place. Verified working on
+:: Windows + RTX 5090 + torch 2.10+cu128 inside Helios's venv on 2026-06-01.
 echo --- genesis-world ^(physics sim; Windows pure-Python wheel; runtime may still need gstaichi build^) ---
 "!UV_EXE!" pip install --python "!VENV_PY!" genesis-world
 if errorlevel 1 ( echo WARN: genesis-world install failed -- run_examples.bat phase 1 will skip )
+
+:: MoGe (Microsoft monocular geometry estimator) — case_simulation.py's
+:: SingleViewReconstructor imports moge.model.v1.MoGeModel. Not on PyPI; only
+:: distributed via git. The install pulls the model code + a small download
+:: helper; runtime weights are fetched via huggingface_hub on first use.
+echo --- moge ^(Microsoft MoGe single-image 3D reconstruction; git install^) ---
+"!UV_EXE!" pip install --python "!VENV_PY!" "git+https://github.com/microsoft/MoGe.git"
+if errorlevel 1 ( echo WARN: moge install failed -- case_simulation.py phase 1 will crash on `from moge.model.v1 import MoGeModel` )
 
 :: huggingface-hub CLI used by README's checkpoint commands.
 echo --- huggingface-hub CLI ---
 "!UV_EXE!" pip install --python "!VENV_PY!" "huggingface-hub[cli]<1.0"
 if errorlevel 1 ( echo WARN: hf cli install failed )
 
+:: pytorch3d via miropsota's Windows prebuild registry. Match torch 2.10 +
+:: cu128 + cp311 (the venv this script builds). Override via env var if your
+:: venv's combo differs -- listing at https://miropsota.github.io/torch_packages_builder/pytorch3d/
+if not defined PYTORCH3D_WHEEL set "PYTORCH3D_WHEEL=https://miropsota.github.io/torch_packages_builder/pytorch3d/pytorch3d-0.7.9+d9839a9pt2.10.0cu128-cp311-cp311-win_amd64.whl"
+echo --- pytorch3d ^(Windows prebuild from miropsota; sm_120 verified^) ---
+echo     wheel: !PYTORCH3D_WHEEL!
+"!UV_EXE!" pip install --python "!VENV_PY!" "!PYTORCH3D_WHEEL!"
+if errorlevel 1 (
+    echo WARN: pytorch3d install failed -- case_simulation.py will crash on `from pytorch3d.renderer.blending`.
+    echo       Override the wheel with PYTORCH3D_WHEEL=^<url-or-path^> and re-run setup.
+)
+
 echo.
 echo --- NOT installed on Windows ^(would need WSL or substantial source builds^): ---
-echo     * pytorch3d         ^(pin 0.7.8+pt2.5.1cu121 mismatches torch 2.10; source build = MSVC + 10-20min^)
-echo     * flash_attn        ^(Linux wheel pinned; mjun0812 has Windows prebuild if you want to try^)
+echo     * flash_attn        ^(Linux wheel pinned; mjun0812 has Windows prebuild for cu128torch2.10 cp311 if you want to try^)
 echo     * sam_3d_objects    ^(NGC PyPI + nvidia-kaolin link, Linux^)
 echo     * sam2              ^(should pip install on Windows, omitted for setup brevity^)
 echo.
 echo --- inference smoke test ---
 "!VENV_PY!" -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'sm', torch.cuda.get_device_capability(0))"
 "!VENV_PY!" -c "import diffusers, kornia, ffmpeg, open_clip; print('diffusers', diffusers.__version__, '/ kornia', kornia.__version__)"
+"!VENV_PY!" -c "import pytorch3d; print('pytorch3d', pytorch3d.__version__)" 2>nul
+if errorlevel 1 echo "  pytorch3d : NOT importable -- case_simulation.py will crash on `from pytorch3d.renderer.blending`"
+"!VENV_PY!" -c "import repvit_sam; print('repvit_sam: ok')" 2>nul
+if errorlevel 1 echo "  repvit_sam : NOT importable -- case_simulation.py segmenter import will fail"
 "!VENV_PY!" -c "import genesis as gs; print('genesis', gs.__version__)" 2>nul
 if errorlevel 1 echo "  genesis : NOT importable -- phase 1 ^(case_simulation^) will be skipped at runtime"
 
