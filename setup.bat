@@ -141,8 +141,12 @@ if errorlevel 1 ( echo ERROR: requirements install failed & exit /b 1 )
 :: requirements.txt — they live in demo_web/requirements.txt which is heavier
 :: and has Linux-pinned torch / pytorch3d / flash_attn that we don't want.
 :: Cherry-pick the ones case_simulation.py actually imports.
-echo --- case_simulation deps ^(omegaconf, safetensors, transformers, trimesh, peft, PyYAML^) ---
-"!UV_EXE!" pip install --python "!VENV_PY!" omegaconf safetensors transformers trimesh peft PyYAML
+echo --- case_simulation deps ^(omegaconf, safetensors, transformers, trimesh, peft, PyYAML, lightning^) ---
+:: lightning pulls in pytorch-lightning + torchmetrics; needed by sam_3d_objects's
+:: model.io which does `import lightning.pytorch as pl` (only triggered if you've
+:: hand-installed sam_3d_objects, which the upstream Linux-pinned route doesn't do
+:: on Windows but is required for the full case_simulation phase-1 pipeline).
+"!UV_EXE!" pip install --python "!VENV_PY!" omegaconf safetensors transformers trimesh peft PyYAML lightning
 if errorlevel 1 ( echo WARN: case_simulation deps install had errors -- phase 1 may break )
 
 :: Genesis (physics sim) — needed by case_simulation.py and demo_web/app.py.
