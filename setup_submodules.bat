@@ -26,12 +26,14 @@ cd /d "%~dp0"
 
 set "SKIP_CLONE=0"
 set "VERIFY_ONLY=0"
+set "SKIP_DOWNLOAD=0"
 :parse
 if "%~1"=="" goto args_done
-if /I "%~1"=="--skip-clone"  ( set "SKIP_CLONE=1" & shift & goto parse )
-if /I "%~1"=="--verify-only" ( set "VERIFY_ONLY=1" & shift & goto parse )
-if /I "%~1"=="--help"        goto :help
-if /I "%~1"=="-h"            goto :help
+if /I "%~1"=="--skip-clone"    ( set "SKIP_CLONE=1" & shift & goto parse )
+if /I "%~1"=="--verify-only"   ( set "VERIFY_ONLY=1" & shift & goto parse )
+if /I "%~1"=="--skip-download" ( set "SKIP_DOWNLOAD=1" & shift & goto parse )
+if /I "%~1"=="--help"          goto :help
+if /I "%~1"=="-h"              goto :help
 echo ERROR: unknown arg %~1
 exit /b 2
 :args_done
@@ -125,14 +127,34 @@ echo --- 3c. uninstall gstaichi (collides with quadrants on Layout) ---
 "!UV!" pip uninstall --python "!VENV_PY!" gstaichi 2>nul
 
 echo.
-echo --- 3d. SAM2.1 hiera-large checkpoint (~898 MB) ---
+echo --- 3d. model checkpoints (SAM2 + facebook/sam-3d-objects) ---
+:: download_models.py handles both:
+::   - SAM2.1 hiera-large direct URL (~898 MB)
+::   - facebook/sam-3d-objects HF repo (gated, ~12.81 GB) -- needs `hf auth login`
+::     with an account that's been granted access; skips with a warning otherwise
+:: Pass --skip-download to setup_submodules.bat to opt out (e.g., when reusing
+:: an existing weights tree elsewhere on disk).
+set "_SAM3D_YAML=%~dp0submodules\sam_3d_objects\checkpoints\hf\pipeline.yaml"
 set "_SAM2_CKPT=%~dp0submodules\sam2\checkpoints\sam2.1_hiera_large.pt"
-if not exist "!_SAM2_CKPT!" (
-    echo Downloading sam2.1_hiera_large.pt...
-    curl -L -o "!_SAM2_CKPT!" "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"
-    if errorlevel 1 ( echo FAIL sam2 checkpoint download & exit /b 1 )
+if "%SKIP_DOWNLOAD%"=="1" (
+    echo SKIPPED: --skip-download was passed.
+    if not exist "!_SAM3D_YAML!" echo   WARN: sam_3d_objects checkpoints missing -- run_examples.bat will fail.
+    if not exist "!_SAM2_CKPT!"  echo   WARN: SAM2 checkpoint missing.
 ) else (
-    echo SAM2 checkpoint already present at !_SAM2_CKPT!
+    echo Invoking download_models.py for SAM2 + facebook/sam-3d-objects...
+    "!VENV_PY!" "%~dp0download_models.py" --sam2-only --yes
+    if errorlevel 1 ( echo FAIL SAM2 download & exit /b 1 )
+    if not exist "!_SAM3D_YAML!" (
+        "!VENV_PY!" "%~dp0download_models.py" --sam3d-only --yes
+        if errorlevel 1 (
+            echo WARN: facebook/sam-3d-objects download skipped or failed.
+            echo       Visit https://huggingface.co/facebook/sam-3d-objects to request access,
+            echo       then re-run: setup_submodules.bat --verify-only ^(or just run_examples.bat^).
+        )
+    ) else (
+        echo facebook/sam-3d-objects checkpoints already present at:
+        echo   !_SAM3D_YAML!
+    )
 )
 
 :verify
@@ -169,10 +191,15 @@ exit /b 0
 
 :help
 echo Usage:
-echo   setup_submodules.bat                 install all submodules into Helios venv
+echo   setup_submodules.bat                 install all submodules + download weights
 echo   setup_submodules.bat --skip-clone    skip `git submodule update --init`
+echo   setup_submodules.bat --skip-download skip SAM2 + sam_3d_objects downloads
 echo   setup_submodules.bat --verify-only   just import-test, don't install
 echo.
 echo Env:
 echo   REALWONDER_VENV    venv to install into ^(default Helios/.venv^)
+echo.
+echo NOTE: facebook/sam-3d-objects is a GATED HF repo. Request access at:
+echo       https://huggingface.co/facebook/sam-3d-objects
+echo       then `hf auth login` with an approved account before running this.
 exit /b 0
